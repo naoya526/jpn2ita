@@ -1,14 +1,22 @@
 ## proposa Italian-Japanese translator with LSTM 
 
+### repository which I will use for the base line:
+
+#### deeplearning from scratch(Oreilly)
+- https://github.com/oreilly-japan/deep-learning-from-scratch-2 
+- https://github.com/naoya526/Deeplearning2
+#### Pavia University "Machine Learning (Professor Claudio Cusano)"
+- English_to_Italian_automatic_translation.ipynb
+
+### dataset 
 I found Italian-Japanese Corpus named JAICO[1], ITADICT[2], multilingual parallel corpus from TED talks[3] on this website:
 
 [1]JAICO https://www2.ninjal.ac.jp/past-events/2009_2021/event/specialists/project-meeting/files/JCLWorkshop_no6_papers/JCLWorkshop_No6_26.pdf 
 [2]a4edu https://a4edu.unive.it/ita/index#do 
-
 [3] https://github.com/ajinkyakulkarni14/TED-Multilingual-Parallel-Corpus
 
 
-Right now, I choose [3]multilingual parallel-corpus 
+Right now, I'm thinking to use  [3]multilingual parallel-corpus
 
 
 ### comparison between italian and japanese
