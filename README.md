@@ -14,6 +14,17 @@
 In japanese, there's no space for divide words like English. ItmeansJapansewritelikethis.
 Hence, It is requrired to divide into each sentences, so it could be classified as one process in the sequence of the tokenization.
 
+2. Refine Dataset(or find another solution)
+- It will be discussed below, but The dataset have problem of missalignment. this will cause significant influence to performance of the model.
+
+3. Implement various type of the model(LSTM, Transformer)
+- this will be proceed with the code which has shown in baseline. I want to try Transformer on GCP(I have 300 dollar grants), but also I want to implement model which is excutable on my laptop.
+
+4. Learning/Inference model
+
+5. Finetuning(If possible)
+with small amount of the clearly refined dataset, I can try fine tuning with PPO(Proximal Policy Optimization).
+
 
 ### dataset 
 I found Italian-Japanese Corpus named JAICO[1], ITADICT[2], multilingual parallel corpus from TED talks[3] on these website:
