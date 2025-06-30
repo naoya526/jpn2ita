@@ -11,9 +11,9 @@
 ### dataset 
 I found Italian-Japanese Corpus named JAICO[1], ITADICT[2], multilingual parallel corpus from TED talks[3] on this website:
 
-[1]JAICO https://www2.ninjal.ac.jp/past-events/2009_2021/event/specialists/project-meeting/files/JCLWorkshop_no6_papers/JCLWorkshop_No6_26.pdf 
-[2]a4edu https://a4edu.unive.it/ita/index#do 
-[3] https://github.com/ajinkyakulkarni14/TED-Multilingual-Parallel-Corpus
+1. **JAICO** https://www2.ninjal.ac.jp/past-events/2009_2021/event/specialists/project-meeting/files/JCLWorkshop_no6_papers/JCLWorkshop_No6_26.pdf 
+2. **a4edu** https://a4edu.unive.it/ita/index#do 
+3. **TED Talk** https://github.com/ajinkyakulkarni14/TED-Multilingual-Parallel-Corpus
 
 
 Right now, I'm thinking to use  [3]multilingual parallel-corpus
