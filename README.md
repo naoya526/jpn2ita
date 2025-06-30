@@ -1,4 +1,4 @@
-# Italian-Japanese Neural Machine Translation
+# Italian-Japanese Translator
 
 A deep learning project focused on building an Italian-Japanese translator using LSTM and Transformer architectures.
 
