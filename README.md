@@ -2,11 +2,18 @@
 
 ### repository which I will use for the base line:
 
-#### deeplearning from scratch(Oreilly)
+1. deeplearning from scratch(Oreilly)
 - https://github.com/oreilly-japan/deep-learning-from-scratch-2 
 - https://github.com/naoya526/Deeplearning2
-#### Pavia University "Machine Learning (Professor Claudio Cusano)"
+2. Pavia University "Machine Learning (Professor Claudio Cusano)"
 - English_to_Italian_automatic_translation.ipynb
+
+### My Goal and What to do
+1. Morphological analysis
+- When it comes to process non-Alphabet language (Alabic, Japanese, Chinese, Corean), you need to do **Morphological analysis**. I'm thinking to use tool, "Vibrato" for this process.
+In japanese, there's no space for divide words like English. ItmeansJapansewritelikethis.
+Hence, It is requrired to divide into each sentences, so it could be classified as one process in the sequence of the tokenization.
+
 
 ### dataset 
 I found Italian-Japanese Corpus named JAICO[1], ITADICT[2], multilingual parallel corpus from TED talks[3] on these website:
