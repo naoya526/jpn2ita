@@ -58,6 +58,7 @@ Still there are significant missalignment, so I'm still thinking how to process 
 
 1. Choose another dataset - this could be option. Correcting missalignment of 40,000 row is not realistic. There might be English-multilingual Dataset.(Eng-Jpn,Eng-Ita)
 2. Invastingating with 500 row, if I detect the miss alignment, just delete that exessive part of corpus and align properly. This could be option. the problem is also requiring a lot of time and petience.
+3. Choose another languages which has more option for the multilingual dataset : We don't have Italian-Japanese multilingual dataset. For example, I can try with French-Italian dataset, but I think if we don't have enough dataset, it means the model could be valuable.
 
 
 
