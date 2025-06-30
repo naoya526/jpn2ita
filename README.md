@@ -9,11 +9,11 @@
 - English_to_Italian_automatic_translation.ipynb
 
 ### dataset 
-I found Italian-Japanese Corpus named JAICO[1], ITADICT[2], multilingual parallel corpus from TED talks[3] on this website:
+I found Italian-Japanese Corpus named JAICO[1], ITADICT[2], multilingual parallel corpus from TED talks[3] on these website:
 
 1. **JAICO** https://www2.ninjal.ac.jp/past-events/2009_2021/event/specialists/project-meeting/files/JCLWorkshop_no6_papers/JCLWorkshop_No6_26.pdf 
 2. **a4edu** https://a4edu.unive.it/ita/index#do 
-3. **TED Talk** https://github.com/ajinkyakulkarni14/TED-Multilingual-Parallel-Corpus
+3. **TED-Multilingual-Parallel-Corpus** https://github.com/ajinkyakulkarni14/TED-Multilingual-Parallel-Corpus
 
 
 Right now, I'm thinking to use  [3]multilingual parallel-corpus
@@ -38,15 +38,27 @@ Line 1654324 (#389764): （拍手）
 ```
 row: 389764
 
+#349048 Quindi, questa è la città esistente, e questa è la città nuova.
+corresponds to 
+#389763 これが現在の街で こちらが新しい街です
+at least these last sentence shows same meaning.
+
 #### problem of this corpus
 there are significant missalignment in this corpus.
 One of the reason for this problem is duplication of the sentence. For example, sometimes this corpus repeat same phrases like "E questo è il piano per i tetti della città.", "E questo è il piano per i tetti della città."
 This phenomenon was observed particulary in japanese corpus. 
 
 #### solution
-at least, I delited the repeated part of each corpus. 
+at least, I deleted the repeated part of each corpus and Split them into Batch which contain 1,000 row.
 
 delete_duplicates/it_sentences_no_duplicates.txt: 349048→346929
 delete_duplicates/ja_sentences_no_duplicates.txt: 389764→384363
+
+Still there are significant missalignment, so I'm still thinking how to process this dataset. 
+
+1. Choose another dataset - this could be option. Correcting missalignment of 40,000 row is not realistic. There might be English-multilingual Dataset.(Eng-Jpn,Eng-Ita)
+2. Invastingating with 500 row, if I detect the miss alignment, just delete that exessive part of corpus and align properly. This could be option. the problem is also requiring a lot of time and petience.
+
+
 
 
