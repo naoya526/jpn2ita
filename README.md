@@ -143,7 +143,7 @@ Quindi, questa è la città esistente, e questa è la città nuova.
 - **English-Italian Translation**
   - Better dataset availability
   - Similar linguistic families
-  - Proof of concept for Romance language pairs
+  
 
 ### Technical Implementation Plan
 
@@ -157,10 +157,10 @@ Quindi, questa è la città esistente, e questa è la città nuova.
    - Compare performance with LSTM baseline
    - Optimize for computational efficiency
 
-3. **Phase 3: Production Optimization**
+3. **Phase 3: Production Optimization, Fine Tuning**
    - Model compression and quantization
    - Real-time inference optimization
-   - API development for practical usage
+   - Fine Tuning with PPO
 
 ## Project Structure
 
