@@ -60,6 +60,7 @@ This project aims to develop a neural machine translation model for Italian-Japa
 
 **Original Corpus:**
 - Italian sentences: 349,048 lines
+- French sentences: 349049 lines
 - Japanese sentences: 389,764 lines
 - **Misalignment:** 40,716 line difference
 
