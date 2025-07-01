@@ -176,12 +176,6 @@ jpn2ita/
 └── README.md                   # This file
 ```
 
-## Resources
-
-- **Morphological Analysis:** [Vibrato](https://github.com/daac-tools/vibrato)
-- **BLEU Evaluation:** [SacreBLEU](https://github.com/mjpost/sacrebleu)
-- **Model Framework:** PyTorch / TensorFlow
-- **Cloud Platform:** Google Cloud Platform (GCP)
 
 ## Success Metrics
 
