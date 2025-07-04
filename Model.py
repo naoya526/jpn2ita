@@ -169,25 +169,13 @@ class PositionwiseFeedForward(nn.Module):
         self.gelu = nn.GELU()
 
     def forward(self, x):
-        # 🔍 FeedForward の正しい順序と活性化について
-        
-        # 1. 第1層: d_model → d_ff (次元拡張)
-        x = self.linear1(x)          # 線形変換
-        x = self.gelu(x)             # 活性化関数 (中間層のみ)
-        x = self.dropout(x)          # ドロップアウト
-        
-        # 2. 第2層: d_ff → d_model (次元復元)
-        x = self.linear2(x)          # 線形変換
-        x = self.dropout(x)          # ドロップアウト
-        
-        
-        return x  # 出力次元は元のd_modelに戻す
-        
-        # 💡 なぜ最後に活性化しないのか？
-        # 1. Residual Connection: x + FFN(x) で加算するため
-        # 2. 表現の柔軟性: 負の値も重要な情報
-        # 3. Transformer設計: 最終的にはLayerNormが正規化
-        
+        x = self.linear1(x)          
+        x = self.gelu(x)             
+        x = self.dropout(x)          
+        x = self.linear2(x)          
+        x = self.dropout(x)            
+        return x  
+      
 
 class TransformerBlock(nn.Module):
     """
