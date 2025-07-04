@@ -186,12 +186,29 @@ class TransformerBlock(nn.Module):
     """
     def __init__(self, d_model, num_heads, d_ff, dropout=0.1):
         super().__init__()
-        # TODO: アテンション、FFN、正規化層を組み合わせ
-        pass
-    
+        self.attention = MultiHeadAttention(d_model,num_heads)
+        self.layer_norm1 = nn.LayerNorm(normalized_shape=d_model, eps=1e-6)
+        self.ffn = PositionwiseFeedForward(d_model,d_ff)
+        self.dropout = nn.Dropout(dropout)
     def forward(self, x, mask=None):
-        # TODO: Transformer blockの処理を実装
-        pass
+        #Attention block
+        residual = x
+        print("Took Residual...",x.shape)
+        x = self.layer_norm1(x)
+        print("calculating layer norm...",x.shape)
+        x = self.attention(x)
+        print("calculating Attention...",x.shape)
+        x = x + residual
+        print("calculating Residual Connection...",x.shape)
+        #ffnn
+        residual = x
+        x = self.layer_norm1(x)
+        print("calculating layer norm...",x.shape)
+        x = self.ffn(x)
+        print("calculating ffn...",x.shape)
+        x = x + residual
+        return x
+
 
 class BertEmbeddings(nn.Module):
     """
@@ -209,7 +226,6 @@ class BertEmbeddings(nn.Module):
     def forward(self, input_ids, token_type_ids=None):
         # TODO: 埋め込みの計算を実装
         pass
-
 class Bert(nn.Module):
     """
     BERT実装の最終形
@@ -239,9 +255,17 @@ class Bert(nn.Module):
 
 # main
 def main():
-    x = torch.randn(2, 10, 512)  # (batch, seq, d_model)
-    attn = ShowMultiHeadAttention(512, 8)
-    out = attn(x)
+    d_model = 512
+    seq = 10
+    batch_size = 2
+    num_heads=2
+    d_ff=10
+
+    x = torch.randn(batch_size, seq, d_model)  # (batch, seq, d_model)
+    print("start")
+    func = TransformerBlock(d_model, num_heads, d_ff)
+    #attn = ShowMultiHeadAttention(512, 8)
+    out = func(x)
     assert out.shape == x.shape
     return 0
 
