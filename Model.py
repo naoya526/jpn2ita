@@ -188,23 +188,24 @@ class TransformerBlock(nn.Module):
         super().__init__()
         self.attention = MultiHeadAttention(d_model,num_heads)
         self.layer_norm1 = nn.LayerNorm(normalized_shape=d_model, eps=1e-6)
-        self.ffn = PositionwiseFeedForward(d_model,d_ff)
+        self.layer_norm2 = nn.LayerNorm(normalized_shape=d_model, eps=1e-6)
         self.dropout = nn.Dropout(dropout)
+        self.ffn = PositionwiseFeedForward(d_model,d_ff)
     def forward(self, x, mask=None):
         #Attention block
         residual = x
         print("Took Residual...",x.shape)
         x = self.layer_norm1(x)
         print("calculating layer norm...",x.shape)
-        x = self.attention(x)
+        x = self.dropout(self.attention(x,mask))
         print("calculating Attention...",x.shape)
         x = x + residual
         print("calculating Residual Connection...",x.shape)
         #ffnn
         residual = x
-        x = self.layer_norm1(x)
+        x = self.layer_norm2(x)
         print("calculating layer norm...",x.shape)
-        x = self.ffn(x)
+        x = self.dropout(self.ffn(x))
         print("calculating ffn...",x.shape)
         x = x + residual
         return x
@@ -271,257 +272,7 @@ def main():
 
 main()
 
-# 実装のチェックポイント:
-"""
-🔍 段階的なテスト方法:
 
-1. MultiHeadAttention単体テスト:
-   x = torch.randn(2, 10, 512)  # (batch, seq, d_model)
-   attn = MultiHeadAttention(512, 8)
-   out = attn(x)
-   assert out.shape == x.shape
-
-2. TransformerBlock単体テスト:
-   block = TransformerBlock(512, 8, 2048)
-   out = block(x)
-   assert out.shape == x.shape
-
-3. BERT全体テスト:
-   bert = Bert(vocab_size=30000, d_model=512, num_layers=6, num_heads=8)
-   input_ids = torch.randint(0, 30000, (2, 50))
-   out = bert(input_ids)
-   print(f"Output shape: {out.shape}")
-
-📚 参考になる実装のヒント:
-- "Attention Is All You Need" (Transformer原論文)
-- "BERT: Pre-training of Deep Bidirectional Transformers" (BERT論文)
-- PyTorchの nn.TransformerEncoder の実装を参考に（ただしコピーしない）
-
-🎯 実装後の課題:
-1. 小さなデータセットでMLMタスクを学習
-2. Attention weightsの可視化
-3. [CLS]トークンの分類性能評価
-"""
-
-# ==========================================
-# 🛠️ 実装の道しるべ - 詳細ガイド
-# ==========================================
-
-"""
-📖 STEP 1: Multi-Head Attention を理解・実装
-
-核心的な質問:
-Q1. なぜ「Multi」Head なのか？
-→ 異なる種類の関係性（構文的、意味的）を並列で捉えるため
-
-Q2. Scaled Dot-Product Attention の式は？
-→ Attention(Q,K,V) = softmax(QK^T / √d_k)V
-
-Q3. Maskingはなぜ必要？
-→ PADトークンへのattentionを防ぐため（-infを代入してsoftmax→0）
-
-実装のポイント:
-- d_model を num_heads で割り切れる必要がある
-- reshape操作で(batch, seq, num_heads, head_dim)に変形
-- Einstein notation (torch.einsum) が便利
-- attention_weightsを保存すると可視化に便利
-"""
-
-class AttentionVisualization:
-    """
-    Attention重みの可視化用ユーティリティ
-    
-    使用例:
-    viz = AttentionVisualization()
-    viz.plot_attention(attention_weights, tokens, head_idx=0)
-    """
-    @staticmethod
-    def plot_attention(attention_weights, tokens, head_idx=0):
-        # TODO: matplotlib/seabornでheatmap描画
-        # ヒント: attention_weights.shape = (batch, num_heads, seq_len, seq_len)
-        pass
-
-"""
-📖 STEP 2: Position Embeddings の重要性
-
-核心的な質問:
-Q1. なぜ位置情報が必要？
-→ Transformerは順序を考慮しない。「I love you」と「You love I」が同じになってしまう
-
-Q2. 学習可能 vs 固定式 のどちらを選ぶ？
-→ BERTは学習可能。GPTは固定式（sin/cos）。どちらでも実装可能
-
-Q3. 絶対位置 vs 相対位置？
-→ BERTは絶対位置。最近の研究では相対位置も注目
-
-実装のコツ:
-- max_seq_lenまでの位置埋め込みを事前に作成
-- position_ids = torch.arange(seq_len) で位置インデックス生成
-"""
-
-"""
-📖 STEP 3: Layer Normalization の配置
-
-核心的な質問:  
-Q1. Pre-LN vs Post-LN の違いは？
-→ Pre-LN: 学習が安定、勾配消失が起きにくい（最近の主流）
-→ Post-LN: 原論文通り、しかし深い層で不安定
-
-Q2. BatchNorm vs LayerNorm？
-→ LayerNorm: 系列長が可変でも安定
-→ BatchNorm: バッチサイズに依存
-
-実装例:
-# Pre-LN (推奨)
-residual = x
-x = self.layer_norm1(x)
-x = self.attention(x)
-x = x + residual
-
-# Post-LN (原論文)
-residual = x  
-x = self.attention(x)
-x = self.layer_norm1(x + residual)
-"""
-
-"""
-📖 STEP 4: BERTの事前学習タスク
-
-MLM (Masked Language Model):
-- 15%の単語をマスク: 80%→[MASK], 10%→ランダム単語, 10%→そのまま
-- CrossEntropyLossでマスクされた位置のみを予測
-
-NSP (Next Sentence Prediction):  
-- 50%は連続する文、50%はランダムな文
-- [CLS]トークンの表現で二値分類
-
-実装のヒント:
-class BertForPreTraining(nn.Module):
-    def __init__(self, bert_model):
-        super().__init__()
-        self.bert = bert_model
-        self.mlm_head = nn.Linear(bert_model.d_model, bert_model.vocab_size)
-        self.nsp_head = nn.Linear(bert_model.d_model, 2)
-    
-    def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
-        # TODO: MLMとNSPの損失を計算
-        pass
-"""
-
-"""
-📖 STEP 5: デバッグとテストの戦略
-
-🐛 よくあるバグと対処法:
-
-1. Shape Mismatch:
-   print(f"Expected: {expected_shape}, Got: {tensor.shape}")
-   
-2. Gradient Explosion/Vanishing:
-   torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-   
-3. NaN Loss:
-   assert not torch.isnan(loss), f"NaN loss detected at step {step}"
-   
-4. Memory Error:
-   torch.cuda.empty_cache()  # GPU memory cleanup
-   
-🧪 単体テストの例:
-def test_attention():
-    batch_size, seq_len, d_model = 2, 10, 512
-    x = torch.randn(batch_size, seq_len, d_model)
-    
-    attn = MultiHeadAttention(d_model, num_heads=8)
-    out = attn(x)
-    
-    assert out.shape == x.shape, f"Shape mismatch: {out.shape} vs {x.shape}"
-    assert not torch.isnan(out).any(), "NaN detected in output"
-    assert not torch.isinf(out).any(), "Inf detected in output"
-    
-    print("✅ MultiHeadAttention test passed!")
-
-📊 パフォーマンス測定:
-def benchmark_model(model, input_shape, num_runs=100):
-    import time
-    
-    dummy_input = torch.randn(*input_shape)
-    model.eval()
-    
-    # Warmup
-    for _ in range(10):
-        with torch.no_grad():
-            _ = model(dummy_input)
-    
-    # Benchmark
-    start_time = time.time()
-    for _ in range(num_runs):
-        with torch.no_grad():
-            _ = model(dummy_input)
-    
-    avg_time = (time.time() - start_time) / num_runs
-    print(f"Average inference time: {avg_time*1000:.2f}ms")
-"""
-
-# ==========================================
-# 🎯 実装完了後の発展課題
-# ==========================================
-
-"""
-1. 🔥 Advanced Techniques:
-   - RoPE (Rotary Position Embedding)
-   - Flash Attention (メモリ効率化)
-   - LoRA (Low-Rank Adaptation)
-
-2. 📈 性能改善:
-   - Mixed Precision Training (torch.cuda.amp)
-   - Gradient Checkpointing (メモリ節約)
-   - DataParallel / DistributedDataParallel
-
-3. 🔍 分析・可視化:
-   - Attention Pattern の可視化
-   - Embedding Space の可視化 (t-SNE, UMAP)
-   - Layer-wise Learning Rate Decay
-
-4. 🚀 実用化:
-   - ONNX Export (推論最適化)
-   - TensorRT Optimization
-   - Quantization (8bit/16bit)
-"""
-
-# 🤔 なぜ view + permute が必要なのか？詳細解説
-"""
-質問: 「viewとpermuteで次元を変えているのはなぜ？」
-
-💡 答え: **効率的なバッチ並列処理のため**
-
-🔍 具体例で理解しよう:
-d_model=512, num_heads=8, head_dim=64 とする
-
-1️⃣ 元の形状:
-   Q, K, V: (batch=2, seq_len=10, d_model=512)
-
-2️⃣ view操作の理由:
-   512次元を8つのヘッドに分割
-   (2, 10, 512) → (2, 10, 8, 64)
-   ↑ 512 = 8 × 64 に分解
-
-3️⃣ permute操作の理由:
-   (2, 10, 8, 64) → (2, 8, 10, 64)
-   ↑ ヘッド次元を前に持ってくる
-
-4️⃣ なぜこの順序？
-   行列積: (2, 8, 10, 64) @ (2, 8, 64, 10) → (2, 8, 10, 10)
-   ↑ PyTorchは最後の2次元で行列積を計算
-   ↑ 8つのヘッドを**並列**で処理できる！
-
-❌ もしpermuteしなかったら:
-   (2, 10, 8, 64) の形状では、ヘッド次元が最後から2番目にあり、
-   行列積が複雑になってしまう
-
-✅ permuteすることで:
-   - 8つのヘッドを同時に処理
-   - GPUでの並列計算が効率的
-   - メモリアクセスパターンが最適化
-"""
 
 def visualize_tensor_transformation():
     """
@@ -567,60 +318,6 @@ def visualize_tensor_transformation():
 
 # 実行例（コメントアウトを外して試してみてください）
 # visualize_tensor_transformation()
-
-# 📊 メモリ効率と計算効率の比較
-"""
-🚀 なぜ効率的なのか？
-
-1. **メモリアクセスパターン**:
-   - 連続したメモリアクセス
-   - キャッシュヒット率向上
-
-2. **並列処理**:
-   - 8つのヘッドを同時計算
-   - GPUの複数コアを活用
-
-3. **行列積の最適化**:
-   - BLAS (Basic Linear Algebra Subprograms) を活用
-   - ハードウェア最適化の恩恵
-
-❌ 非効率な実装例:
-for head_idx in range(num_heads):
-    # 各ヘッドを順次処理（遅い！）
-    q_head = query[:, :, head_idx*head_dim:(head_idx+1)*head_dim]
-    # ... 計算 ...
-
-✅ 効率的な実装（現在のコード）:
-# 全ヘッドを並列処理
-scores = torch.matmul(query_all_heads, key_all_heads.transpose(-2, -1))
-"""
-
-# 🤔 FeedForward の活性化関数について詳細解説
-"""
-質問: 「FeedForwardは最後は活性化しないの？」
-
-💡 答え: **最後は活性化しません！**
-
-📊 理由の詳細:
-
-1️⃣ **Residual Connection のため**
-   TransformerBlockでは: output = x + FFN(x)
-   → FFN(x)が制限されると、Residual学習が阻害される
-
-2️⃣ **表現の柔軟性**
-   - 正の値だけでなく負の値も重要な情報
-   - ReLUやGELUは負の値を制限してしまう
-
-3️⃣ **Layer Normalization が後処理**
-   - FFN → LayerNorm の順序で正規化される
-   - LayerNormが適切に値を調整
-
-4️⃣ **標準的なTransformer設計**
-   - 原論文 "Attention Is All You Need" でも最後は線形
-   - BERT, GPT等も同様の設計
-
-🔬 実験的な比較:
-"""
 
 def compare_ffn_activations():
     """
