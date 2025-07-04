@@ -265,7 +265,7 @@ def main():
     x = torch.randn(batch_size, seq, d_model)  # (batch, seq, d_model)
     print("start")
     func = TransformerBlock(d_model, num_heads, d_ff)
-    #attn = ShowMultiHeadAttention(512, 8)
+    #func = ShowMultiHeadAttention(d_model, num_heads)
     out = func(x)
     assert out.shape == x.shape
     return 0
