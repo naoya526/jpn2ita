@@ -193,20 +193,21 @@ class TransformerBlock(nn.Module):
         self.ffn = PositionwiseFeedForward(d_model,d_ff)
     def forward(self, x, mask=None):
         #Attention block
+        #TODO implement transformer block
         residual = x
-        print("Took Residual...",x.shape)
+        #print("Took Residual...",x.shape)
         x = self.layer_norm1(x)
-        print("calculating layer norm...",x.shape)
+        #print("calculating layer norm...",x.shape)
         x = self.dropout(self.attention(x,mask))
-        print("calculating Attention...",x.shape)
+        #print("calculating Attention...",x.shape)
         x = x + residual
-        print("calculating Residual Connection...",x.shape)
+        #print("calculating Residual Connection...",x.shape)
         #ffnn
         residual = x
         x = self.layer_norm2(x)
-        print("calculating layer norm...",x.shape)
+        #print("calculating layer norm...",x.shape)
         x = self.dropout(self.ffn(x))
-        print("calculating ffn...",x.shape)
+        #print("calculating ffn...",x.shape)
         x = x + residual
         return x
 
@@ -222,11 +223,31 @@ class BertEmbeddings(nn.Module):
     def __init__(self, vocab_size, d_model, max_seq_len=512, dropout=0.1):
         super().__init__()
         # TODO: 3種類の埋め込みを実装
-        pass
-    
+        self.d_model = d_model
+        self.token = torch.nn.Embedding(vocab_size, d_model, padding_idx=0)
+        self.position = torch.nn.Embedding(max_seq_len, d_model)
+        self.segment = torch.nn.Embedding(2, d_model)  # 2つのセグメント（0と1）
+        self.layer_norm = nn.LayerNorm(d_model)
+        self.dropout = nn.Dropout(dropout)
+        #Embedding: Lookup table that keep meaning vector of words
     def forward(self, input_ids, token_type_ids=None):
         # TODO: 埋め込みの計算を実装
-        pass
+        batch_size, seq_len = input_ids.shape
+        # Step 1: Token Embeddings
+        token_embeddings = self.token(input_ids)
+        # Step 2: Position Embeddings
+        position_ids = torch.arange(seq_len, device=input_ids.device).unsqueeze(0)
+        position_ids = position_ids.expand(batch_size, -1)  # 🔧 バッチ次元を拡張
+        position_embeddings = self.position(position_ids)
+        # Step 3: Segment Embeddings
+        if token_type_ids is None:
+            token_type_ids = torch.zeros_like(input_ids)  # 全て0（単一文）
+        segment_embeddings = self.segment(token_type_ids)  # (batch, seq_len, d_model)
+        embeddings = token_embeddings + position_embeddings + segment_embeddings
+        embeddings = self.dropout(self.layer_norm(embeddings))
+
+        return embeddings
+        
 class Bert(nn.Module):
     """
     BERT実装の最終形
@@ -255,7 +276,8 @@ class Bert(nn.Module):
         pass
 
 # main
-def main():
+
+def exp_Transformer():
     d_model = 512
     seq = 10
     batch_size = 2
@@ -268,6 +290,130 @@ def main():
     #func = ShowMultiHeadAttention(d_model, num_heads)
     out = func(x)
     assert out.shape == x.shape
+    return 0
+
+def test_bert_embeddings():
+    """
+    BertEmbeddingsの軽量テスト
+    """
+    print("🧪 BertEmbeddings テスト開始")
+    print("=" * 50)
+    
+    # パラメータ設定
+    vocab_size = 1000
+    d_model = 128  # 軽量化（通常は768）
+    max_seq_len = 64
+    batch_size = 2
+    seq_len = 8
+    
+    # モデル初期化
+    embeddings = BertEmbeddings(
+        vocab_size=vocab_size,
+        d_model=d_model,
+        max_seq_len=max_seq_len,
+        dropout=0.1
+    )
+    
+    print(f"📋 設定:")
+    print(f"  - vocab_size: {vocab_size}")
+    print(f"  - d_model: {d_model}")
+    print(f"  - max_seq_len: {max_seq_len}")
+    print(f"  - batch_size: {batch_size}, seq_len: {seq_len}")
+    
+    # テストデータ作成
+    input_ids = torch.randint(0, vocab_size, (batch_size, seq_len))
+    token_type_ids = torch.zeros(batch_size, seq_len, dtype=torch.long)
+    token_type_ids[:, seq_len//2:] = 1  # 後半を文B（セグメント1）に
+    
+    print(f"\n📥 入力データ:")
+    print(f"  input_ids: {input_ids.shape}")
+    print(f"  token_type_ids: {token_type_ids.shape}")
+    print(f"  input_ids[0]: {input_ids[0].tolist()}")
+    print(f"  token_type_ids[0]: {token_type_ids[0].tolist()}")
+    
+    # Forward pass
+    with torch.no_grad():
+        output = embeddings(input_ids, token_type_ids)
+    
+    print(f"\n📤 出力:")
+    print(f"  output shape: {output.shape}")
+    print(f"  output range: [{output.min():.3f}, {output.max():.3f}]")
+    print(f"  output mean: {output.mean():.3f}")
+    print(f"  output std: {output.std():.3f}")
+    
+    # 各埋め込みの個別テスト
+    print(f"\n🔬 個別埋め込みテスト:")
+    
+    # Token Embeddings
+    token_emb = embeddings.token(input_ids)
+    print(f"  Token embeddings: {token_emb.shape}")
+    
+    # Position Embeddings
+    position_ids = torch.arange(seq_len).unsqueeze(0).expand(batch_size, -1)
+    pos_emb = embeddings.position(position_ids)
+    print(f"  Position embeddings: {pos_emb.shape}")
+    
+    # Segment Embeddings
+    seg_emb = embeddings.segment(token_type_ids)
+    print(f"  Segment embeddings: {seg_emb.shape}")
+    
+    # 手動計算との比較
+    manual_sum = token_emb + pos_emb + seg_emb
+    manual_output = embeddings.layer_norm(manual_sum)
+    
+    print(f"\n✅ 検証:")
+    print(f"  手動計算との差: {torch.abs(output - manual_output).max():.6f}")
+    
+    # セグメント埋め込みの効果確認
+    print(f"\n🎯 セグメント埋め込みの効果:")
+    seg_0_emb = embeddings.segment.weight[0]  # セグメント0の埋め込み
+    seg_1_emb = embeddings.segment.weight[1]  # セグメント1の埋め込み
+    similarity = F.cosine_similarity(seg_0_emb.unsqueeze(0), seg_1_emb.unsqueeze(0))
+    print(f"  セグメント0 vs 1 類似度: {similarity.item():.3f}")
+    print(f"  (学習前なのでランダム値)")
+    
+    print(f"\n🎉 BertEmbeddings テスト完了！")
+    
+    return output
+
+def test_edge_cases():
+    """
+    エッジケースのテスト
+    """
+    print("\n🚨 エッジケーステスト")
+    print("=" * 40)
+    
+    vocab_size = 100
+    d_model = 64
+    embeddings = BertEmbeddings(vocab_size, d_model, max_seq_len=32, dropout=0.0)
+    
+    # テスト1: 最小サイズ
+    print("1️⃣ 最小サイズテスト (1x1)")
+    input_ids = torch.tensor([[5]])
+    output = embeddings(input_ids)
+    print(f"   出力形状: {output.shape}")
+    assert output.shape == (1, 1, d_model), "形状が正しくありません"
+    
+    # テスト2: パディングトークン
+    print("2️⃣ パディングトークンテスト")
+    input_ids = torch.tensor([[0, 1, 2, 0, 0]])  # 0はパディング
+    output = embeddings(input_ids)
+    print(f"   パディング位置の出力: {output[0, 0].sum():.3f}")
+    
+    # テスト3: token_type_ids未指定
+    print("3️⃣ token_type_ids未指定テスト")
+    input_ids = torch.tensor([[1, 2, 3, 4]])
+    output1 = embeddings(input_ids)  # token_type_ids=None
+    output2 = embeddings(input_ids, torch.zeros_like(input_ids))
+    diff = torch.abs(output1 - output2).max()
+    print(f"   差分: {diff:.6f}")
+    assert diff < 1e-6, "token_type_ids=Noneの処理が正しくありません"
+    
+    print("✅ 全てのエッジケーステスト通過！")
+
+def main():
+    test_bert_embeddings()
+    test_edge_cases()
     return 0
 
 main()
