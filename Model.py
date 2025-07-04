@@ -7,6 +7,88 @@ from torch.utils.data import DataLoader
 # I tried to implement a BERT model from scratch using PyTorch.
 
 # 1. まず基本的なビルディングブロックから
+class ShowMultiHeadAttention(nn.Module):
+    """
+    ヒント: 
+    - Query, Key, Value の3つの線形変換が必要
+    - スケールドドット積アテンション: softmax(QK^T / sqrt(d_k))V
+    - 複数のヘッドを並列実行後、concatenate
+    - 最終的な線形変換で出力次元を調整
+    """
+    def __init__(self, d_model, num_heads, dropout=0.1):
+        super().__init__() # 親クラスの初期化
+        assert d_model % num_heads == 0, "d_model must be divisible by num_heads"
+        
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.head_dim = d_model // num_heads  # 各ヘッドの次元
+        self.dropout = torch.nn.Dropout(dropout)
+        
+        # Q, K, V の線形変換（修正：torch.nn.linear → torch.nn.Linear）
+        self.query = torch.nn.Linear(d_model, d_model)
+        self.key = torch.nn.Linear(d_model, d_model)
+        self.value = torch.nn.Linear(d_model, d_model)
+        
+        # 最終的な出力変換
+        self.out_proj = torch.nn.Linear(d_model, d_model)
+        
+    def forward(self, x, mask=None):
+        batch_size, seq_len, d_model = x.shape
+        
+        # ステップ1: Q, K, V を線形変換で生成
+        query = self.query(x)  # (batch, seq_len, d_model)
+        key = self.key(x)      # (batch, seq_len, d_model)
+        value = self.value(x)  # (batch, seq_len, d_model)
+        
+        print(f"Before View: Q={query.shape}, K={key.shape}, V={value.shape}")
+        
+        # ステップ2: Multi-Head用に次元を変形
+        # 理由1: d_model を num_heads 個のヘッドに分割
+        # (batch, seq_len, d_model) → (batch, seq_len, num_heads, head_dim)
+        query = query.view(batch_size, seq_len, self.num_heads, self.head_dim)
+        key = key.view(batch_size, seq_len, self.num_heads, self.head_dim)  # 修正: query.shape → batch_size
+        value = value.view(batch_size, seq_len, self.num_heads, self.head_dim)
+        
+        print(f"After View: Q={query.shape}, K={key.shape}, V={value.shape}")
+        
+        # ステップ3: 次元の順序を変更（これが質問のポイント！）
+        # 理由2: バッチ並列処理のため (batch, num_heads, seq_len, head_dim)
+        query = query.permute(0, 2, 1, 3)  # (batch, num_heads, seq_len, head_dim)
+        key = key.permute(0, 2, 1, 3)
+        value = value.permute(0, 2, 1, 3)
+        
+        print(f"After Permute: Q={query.shape}, K={key.shape}, V={value.shape}")
+        
+        # ステップ4: Scaled Dot-Product Attention
+        # scores = Q @ K^T / sqrt(d_k)
+        # (batch, num_heads, seq_len, head_dim) @ (batch, num_heads, head_dim, seq_len)
+        # → (batch, num_heads, seq_len, seq_len)
+        scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(self.head_dim)
+        print(f"scores: {scores.shape}")
+        
+        # ステップ5: マスク処理（オプション）
+        if mask is not None:
+            scores = scores.masked_fill(mask == 0, -1e9)
+        
+        # ステップ6: Softmax + Dropout
+        weights = F.softmax(scores, dim=-1)  # (batch, num_heads, seq_len, seq_len)
+        weights = self.dropout(weights)
+        
+        # ステップ7: Value との積
+        # (batch, num_heads, seq_len, seq_len) @ (batch, num_heads, seq_len, head_dim)
+        # → (batch, num_heads, seq_len, head_dim)
+        context = torch.matmul(weights, value)
+        print(f"context: {context.shape}")
+        
+        # ステップ8: ヘッドを結合して元の形状に戻す
+        # (batch, num_heads, seq_len, head_dim) → (batch, seq_len, num_heads, head_dim)
+        context = context.permute(0, 2, 1, 3)
+        # → (batch, seq_len, d_model)
+        context = context.contiguous().view(batch_size, seq_len, self.num_heads * self.head_dim)
+        print(f"Result: {context.shape}")
+        
+        # ステップ9: 最終的な線形変換
+        return self.out_proj(context)  # 修正: output_linear → out_proj
 class MultiHeadAttention(nn.Module):
     """
     ヒント: 
@@ -40,31 +122,19 @@ class MultiHeadAttention(nn.Module):
         key = self.key(x)      # (batch, seq_len, d_model)
         value = self.value(x)  # (batch, seq_len, d_model)
         
-        print(f"📊 変形前: Q={query.shape}, K={key.shape}, V={value.shape}")
-        
         # ステップ2: Multi-Head用に次元を変形
-        # 理由1: d_model を num_heads 個のヘッドに分割
-        # (batch, seq_len, d_model) → (batch, seq_len, num_heads, head_dim)
         query = query.view(batch_size, seq_len, self.num_heads, self.head_dim)
         key = key.view(batch_size, seq_len, self.num_heads, self.head_dim)  # 修正: query.shape → batch_size
         value = value.view(batch_size, seq_len, self.num_heads, self.head_dim)
         
-        print(f"📊 view後: Q={query.shape}, K={key.shape}, V={value.shape}")
-        
         # ステップ3: 次元の順序を変更（これが質問のポイント！）
-        # 理由2: バッチ並列処理のため (batch, num_heads, seq_len, head_dim)
         query = query.permute(0, 2, 1, 3)  # (batch, num_heads, seq_len, head_dim)
         key = key.permute(0, 2, 1, 3)
         value = value.permute(0, 2, 1, 3)
-        
-        print(f"📊 permute後: Q={query.shape}, K={key.shape}, V={value.shape}")
-        
+                
         # ステップ4: Scaled Dot-Product Attention
         # scores = Q @ K^T / sqrt(d_k)
-        # (batch, num_heads, seq_len, head_dim) @ (batch, num_heads, head_dim, seq_len)
-        # → (batch, num_heads, seq_len, seq_len)
         scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(self.head_dim)
-        print(f"📊 scores: {scores.shape}")
         
         # ステップ5: マスク処理（オプション）
         if mask is not None:
@@ -73,23 +143,16 @@ class MultiHeadAttention(nn.Module):
         # ステップ6: Softmax + Dropout
         weights = F.softmax(scores, dim=-1)  # (batch, num_heads, seq_len, seq_len)
         weights = self.dropout(weights)
-        
         # ステップ7: Value との積
-        # (batch, num_heads, seq_len, seq_len) @ (batch, num_heads, seq_len, head_dim)
-        # → (batch, num_heads, seq_len, head_dim)
-        context = torch.matmul(weights, value)
-        print(f"📊 context: {context.shape}")
-        
+        context = torch.matmul(weights, value)    
         # ステップ8: ヘッドを結合して元の形状に戻す
-        # (batch, num_heads, seq_len, head_dim) → (batch, seq_len, num_heads, head_dim)
         context = context.permute(0, 2, 1, 3)
         # → (batch, seq_len, d_model)
         context = context.contiguous().view(batch_size, seq_len, self.num_heads * self.head_dim)
-        print(f"📊 最終: {context.shape}")
-        
+    
         # ステップ9: 最終的な線形変換
         return self.out_proj(context)  # 修正: output_linear → out_proj
-
+    
 class PositionwiseFeedForward(nn.Module):
     """
     ヒント:
@@ -100,12 +163,31 @@ class PositionwiseFeedForward(nn.Module):
     """
     def __init__(self, d_model, d_ff, dropout=0.1):
         super().__init__()
-        # TODO: 2層のFFNを実装
-        pass
-    
+        self.linear1 = nn.Linear(d_model, d_ff)  # 入力次元 → 中間次元
+        self.linear2 = nn.Linear(d_ff, d_model)  # 中間次元
+        self.dropout = nn.Dropout(dropout)
+        self.gelu = nn.GELU()
+
     def forward(self, x):
-        # TODO: forward pass を実装
-        pass
+        # 🔍 FeedForward の正しい順序と活性化について
+        
+        # 1. 第1層: d_model → d_ff (次元拡張)
+        x = self.linear1(x)          # 線形変換
+        x = self.gelu(x)             # 活性化関数 (中間層のみ)
+        x = self.dropout(x)          # ドロップアウト
+        
+        # 2. 第2層: d_ff → d_model (次元復元)
+        x = self.linear2(x)          # 線形変換
+        x = self.dropout(x)          # ドロップアウト
+        
+        
+        return x  # 出力次元は元のd_modelに戻す
+        
+        # 💡 なぜ最後に活性化しないのか？
+        # 1. Residual Connection: x + FFN(x) で加算するため
+        # 2. 表現の柔軟性: 負の値も重要な情報
+        # 3. Transformer設計: 最終的にはLayerNormが正規化
+        
 
 class TransformerBlock(nn.Module):
     """
@@ -170,7 +252,7 @@ class Bert(nn.Module):
 # main
 def main():
     x = torch.randn(2, 10, 512)  # (batch, seq, d_model)
-    attn = MultiHeadAttention(512, 8)
+    attn = ShowMultiHeadAttention(512, 8)
     out = attn(x)
     assert out.shape == x.shape
     return 0
@@ -499,4 +581,123 @@ for head_idx in range(num_heads):
 ✅ 効率的な実装（現在のコード）:
 # 全ヘッドを並列処理
 scores = torch.matmul(query_all_heads, key_all_heads.transpose(-2, -1))
+"""
+
+# 🤔 FeedForward の活性化関数について詳細解説
+"""
+質問: 「FeedForwardは最後は活性化しないの？」
+
+💡 答え: **最後は活性化しません！**
+
+📊 理由の詳細:
+
+1️⃣ **Residual Connection のため**
+   TransformerBlockでは: output = x + FFN(x)
+   → FFN(x)が制限されると、Residual学習が阻害される
+
+2️⃣ **表現の柔軟性**
+   - 正の値だけでなく負の値も重要な情報
+   - ReLUやGELUは負の値を制限してしまう
+
+3️⃣ **Layer Normalization が後処理**
+   - FFN → LayerNorm の順序で正規化される
+   - LayerNormが適切に値を調整
+
+4️⃣ **標準的なTransformer設計**
+   - 原論文 "Attention Is All You Need" でも最後は線形
+   - BERT, GPT等も同様の設計
+
+🔬 実験的な比較:
+"""
+
+def compare_ffn_activations():
+    """
+    最後の活性化ありなしの比較実験
+    """
+    print("🧪 FFN最終層の活性化関数比較実験")
+    print("=" * 50)
+    
+    d_model, d_ff, batch_size, seq_len = 512, 2048, 2, 10
+    x = torch.randn(batch_size, seq_len, d_model)
+    
+    # 1. 標準的なFFN（最後に活性化なし）
+    class StandardFFN(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear1 = nn.Linear(d_model, d_ff)
+            self.linear2 = nn.Linear(d_ff, d_model)
+            self.gelu = nn.GELU()
+            
+        def forward(self, x):
+            x = self.linear1(x)
+            x = self.gelu(x)        # 中間層のみ活性化
+            x = self.linear2(x)     # 最後は線形
+            return x
+    
+    # 2. 最後にも活性化を入れたFFN（実験用）
+    class ActivatedFFN(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear1 = nn.Linear(d_model, d_ff)
+            self.linear2 = nn.Linear(d_ff, d_model)
+            self.gelu = nn.GELU()
+            
+        def forward(self, x):
+            x = self.linear1(x)
+            x = self.gelu(x)        # 中間層活性化
+            x = self.linear2(x)
+            x = self.gelu(x)        # 最後にも活性化（実験）
+            return x
+    
+    standard_ffn = StandardFFN()
+    activated_ffn = ActivatedFFN()
+    
+    # 出力の比較
+    with torch.no_grad():
+        standard_out = standard_ffn(x)
+        activated_out = activated_ffn(x)
+        
+        print(f"入力の範囲: [{x.min():.3f}, {x.max():.3f}]")
+        print(f"標準FFN出力: [{standard_out.min():.3f}, {standard_out.max():.3f}]")
+        print(f"活性化FFN出力: [{activated_out.min():.3f}, {activated_out.max():.3f}]")
+        
+        # 負の値の割合
+        standard_neg_ratio = (standard_out < 0).float().mean()
+        activated_neg_ratio = (activated_out < 0).float().mean()
+        
+        print(f"\n📊 負の値の割合:")
+        print(f"標準FFN: {standard_neg_ratio:.1%}")
+        print(f"活性化FFN: {activated_neg_ratio:.1%}")
+        
+        print(f"\n💡 結論:")
+        print(f"- 標準FFNは正負両方の値を出力（表現力が高い）")
+        print(f"- 活性化FFNは正の値のみ（表現力が制限される）")
+
+# 実行例（コメントアウトを外してください）
+# compare_ffn_activations()
+
+# 📚 他のアーキテクチャとの比較
+"""
+🔍 他のニューラルネットワークとの違い:
+
+1. **CNN (畳み込みニューラルネット)**
+   - 各層でReLU活性化が一般的
+   - 特徴抽出が目的
+
+2. **RNN/LSTM**
+   - 隠れ状態でtanh/sigmoidを使用
+   - ゲート機構で制御
+
+3. **Transformer/BERT**
+   - 中間層のみGELU活性化
+   - 最終層は線形（Residual + LayerNorm）
+
+4. **MLP (多層パーセプトロン)**
+   - 通常は各層で活性化
+   - 分類問題では最後にSoftmax
+
+🎯 Transformerが特殊な理由:
+- Residual Connection の存在
+- LayerNormalization の後処理
+- Attention機構との協調
 """
