@@ -3,7 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 from torch.utils.data import DataLoader
-from Model import TransformerBlock, BertEmbeddings, Bert
+from Encoder import EncoderBlock, BertEmbeddings, Bert
+from Decoder import CrossAttention, DecoderBlock
 
 
 # main
@@ -17,7 +18,7 @@ def exp_Transformer():
 
     x = torch.randn(batch_size, seq, d_model)  # (batch, seq, d_model)
     print("start")
-    func = TransformerBlock(d_model, num_heads, d_ff)
+    func = EncoderBlock(d_model, num_heads, d_ff)
     #func = ShowMultiHeadAttention(d_model, num_heads)
     out = func(x)
     assert out.shape == x.shape
@@ -183,13 +184,428 @@ def test_bert_masking():
     print(f"  有効部分の平均: {valid_output.mean():.6f}")
     print(f"  (パディング部分もAttentionの影響を受ける)")
 
+def test_cross_attention():
+    """
+    CrossAttentionの動作をテスト
+    Query: English hidden states
+    Key, Value: Italian hidden states
+    """
+    print("🧪 CrossAttention テスト開始")
+    print("=" * 50)
+    
+    # パラメータ設定
+    batch_size = 2
+    eng_len = 6  # 英語の系列長
+    ita_len = 8  # イタリア語の系列長
+    d_model = 128
+    num_heads = 8
+    
+    print(f"📋 設定:")
+    print(f"  batch_size: {batch_size}")
+    print(f"  english_len: {eng_len}, italian_len: {ita_len}")
+    print(f"  d_model: {d_model}, num_heads: {num_heads}")
+    
+    # CrossAttentionモデル初期化
+    cross_attention = CrossAttention(d_model, num_heads, dropout=0.1)
+    
+    # ダミーデータ作成
+    # 英語の隠れ状態（Query用）
+    english_hidden = torch.randn(batch_size, eng_len, d_model)
+    # イタリア語の隠れ状態（Key, Value用）
+    italian_hidden = torch.randn(batch_size, ita_len, d_model)
+    
+    print(f"\n📥 入力データ:")
+    print(f"  english_hidden: {english_hidden.shape}")
+    print(f"  italian_hidden: {italian_hidden.shape}")
+    print(f"  english_mean: {english_hidden.mean():.4f}")
+    print(f"  italian_mean: {italian_hidden.mean():.4f}")
+    
+    # マスク作成（イタリア語の一部をマスク）
+    italian_mask = torch.ones(batch_size, ita_len)
+    italian_mask[0, -2:] = 0  # 最初のサンプルの最後2語をマスク
+    italian_mask[1, -3:] = 0  # 2番目のサンプルの最後3語をマスク
+    
+    # マスク形状変換: (batch, ita_len) → (batch, 1, 1, ita_len)
+    extended_mask = italian_mask.unsqueeze(1).unsqueeze(2)
+    extended_mask = (1.0 - extended_mask) * -1e9
+    
+    print(f"\n🎭 マスク情報:")
+    print(f"  italian_mask[0]: {italian_mask[0].tolist()}")
+    print(f"  italian_mask[1]: {italian_mask[1].tolist()}")
+    print(f"  extended_mask.shape: {extended_mask.shape}")
+    
+    # Forward pass
+    print(f"\n🚀 CrossAttention実行...")
+    with torch.no_grad():
+        output = cross_attention(english_hidden, italian_hidden, extended_mask)
+    
+    print(f"\n📤 出力結果:")
+    print(f"  output.shape: {output.shape}")
+    print(f"  output.mean: {output.mean():.4f}")
+    print(f"  output.std: {output.std():.4f}")
+    print(f"  output.min: {output.min():.4f}")
+    print(f"  output.max: {output.max():.4f}")
+    
+    # 形状チェック
+    expected_shape = (batch_size, eng_len, d_model)
+    assert output.shape == expected_shape, f"形状エラー: {output.shape} != {expected_shape}"
+    
+    # NaN/Inf チェック
+    assert not torch.isnan(output).any(), "NaNが検出されました"
+    assert not torch.isinf(output).any(), "Infが検出されました"
+    
+    print(f"\n✅ 基本チェック通過!")
+    
+    # 詳細検証: マスクの効果確認
+    print(f"\n🔍 詳細検証:")
+    
+    # マスクなしでの実行
+    output_no_mask = cross_attention(english_hidden, italian_hidden, mask=None)
+    
+    # 差分確認
+    diff = torch.abs(output - output_no_mask).mean()
+    print(f"  マスクあり vs なし の差分: {diff:.6f}")
+    
+    if diff > 1e-6:
+        print(f"  ✅ マスクが正しく適用されています")
+    else:
+        print(f"  ⚠️  マスクの効果が小さいです")
+    
+    # Attention重みの確認（内部実装をテスト）
+    print(f"\n🎯 内部動作確認:")
+    
+    # Query, Key, Value の生成をテスト
+    query = cross_attention.query(english_hidden)
+    key = cross_attention.key(italian_hidden)
+    value = cross_attention.value(italian_hidden)
+    
+    print(f"  query.shape: {query.shape}")
+    print(f"  key.shape: {key.shape}")
+    print(f"  value.shape: {value.shape}")
+    
+    # 各ヘッドでの処理をテスト
+    query_heads = query.view(batch_size, eng_len, num_heads, d_model // num_heads)
+    key_heads = key.view(batch_size, ita_len, num_heads, d_model // num_heads)
+    
+    print(f"  query_heads.shape: {query_heads.shape}")
+    print(f"  key_heads.shape: {key_heads.shape}")
+    
+    # Attention scoresの計算テスト
+    query_heads = query_heads.permute(0, 2, 1, 3)  # (batch, heads, eng_len, head_dim)
+    key_heads = key_heads.permute(0, 2, 1, 3)      # (batch, heads, ita_len, head_dim)
+    
+    scores = torch.matmul(query_heads, key_heads.transpose(-2, -1))
+    print(f"  attention_scores.shape: {scores.shape}")
+    print(f"  expected: ({batch_size}, {num_heads}, {eng_len}, {ita_len})")
+    
+    # Softmax後の重みの確認
+    weights = F.softmax(scores, dim=-1)
+    print(f"  attention_weights sum: {weights.sum(dim=-1).mean():.4f} (should be ~1.0)")
+    
+    print(f"\n🎉 CrossAttention テスト完了!")
+    return output
+
+def test_cross_attention_edge_cases():
+    """
+    CrossAttentionのエッジケーステスト
+    """
+    print("\n🚨 CrossAttention エッジケーステスト")
+    print("=" * 40)
+    
+    d_model = 64
+    num_heads = 4
+    cross_attention = CrossAttention(d_model, num_heads, dropout=0.0)
+    
+    # テスト1: 最小サイズ
+    print("1️⃣ 最小サイズテスト (1x1)")
+    english = torch.randn(1, 1, d_model)
+    italian = torch.randn(1, 1, d_model)
+    output = cross_attention(english, italian)
+    assert output.shape == (1, 1, d_model), "最小サイズテスト失敗"
+    print("   ✅ 通過")
+    
+    # テスト2: 異なる系列長
+    print("2️⃣ 異なる系列長テスト")
+    english = torch.randn(2, 3, d_model)  # 英語: 3語
+    italian = torch.randn(2, 7, d_model)  # イタリア語: 7語
+    output = cross_attention(english, italian)
+    assert output.shape == (2, 3, d_model), "異なる系列長テスト失敗"
+    print("   ✅ 通過")
+    
+    # テスト3: 完全マスク
+    print("3️⃣ 完全マスクテスト")
+    english = torch.randn(1, 4, d_model)
+    italian = torch.randn(1, 4, d_model)
+    full_mask = torch.full((1, 1, 1, 4), -1e9)  # 全てマスク
+    output = cross_attention(english, italian, full_mask)
+    assert not torch.isnan(output).any(), "完全マスクでNaN発生"
+    print("   ✅ 通過")
+    
+    # テスト4: 勾配フロー確認
+    print("4️⃣ 勾配フローテスト")
+    english = torch.randn(1, 2, d_model, requires_grad=True)
+    italian = torch.randn(1, 3, d_model, requires_grad=True)
+    output = cross_attention(english, italian)
+    loss = output.sum()
+    loss.backward()
+    
+    assert english.grad is not None, "英語の勾配が計算されていません"
+    assert italian.grad is not None, "イタリア語の勾配が計算されていません"
+    print("   ✅ 通過")
+    
+    print("✅ 全エッジケーステスト通過!")
+
+def test_decoder_block():
+    """
+    DecoderBlockの動作をテスト
+    Self-Attention + Cross-Attention + Feed Forward の統合テスト
+    """
+    print("🧪 DecoderBlock テスト開始")
+    print("=" * 50)
+    
+    # パラメータ設定
+    batch_size = 2
+    eng_len = 6    # 英語（Decoder入力）の系列長
+    ita_len = 8    # イタリア語（Encoder出力）の系列長
+    d_model = 128
+    num_heads = 8
+    d_ff = 512
+    
+    print(f"📋 設定:")
+    print(f"  batch_size: {batch_size}")
+    print(f"  english_len: {eng_len}, italian_len: {ita_len}")
+    print(f"  d_model: {d_model}, num_heads: {num_heads}, d_ff: {d_ff}")
+    
+    # DecoderBlock初期化
+    decoder_block = DecoderBlock(d_model, num_heads, d_ff, dropout=0.1)
+    
+    # ダミーデータ作成
+    english_hidden = torch.randn(batch_size, eng_len, d_model)    # Decoder入力
+    italian_encoder = torch.randn(batch_size, ita_len, d_model)   # Encoder出力
+    
+    print(f"\n📥 入力データ:")
+    print(f"  english_hidden: {english_hidden.shape}")
+    print(f"  italian_encoder: {italian_encoder.shape}")
+    print(f"  english_mean: {english_hidden.mean():.4f}")
+    print(f"  italian_mean: {italian_encoder.mean():.4f}")
+    
+    # マスク作成
+    # Self-attention用Causal Mask（未来を見ないように）
+    causal_mask = torch.triu(torch.ones(eng_len, eng_len), diagonal=1)
+    causal_mask = causal_mask.masked_fill(causal_mask == 1, -1e9)
+    causal_mask = causal_mask.unsqueeze(0).unsqueeze(0)  # (1, 1, eng_len, eng_len)
+    
+    # Cross-attention用マスク（イタリア語の一部をマスク）
+    cross_mask = torch.ones(batch_size, ita_len)
+    cross_mask[0, -2:] = 0  # 最初のサンプルの最後2語をマスク
+    cross_mask[1, -3:] = 0  # 2番目のサンプルの最後3語をマスク
+    cross_mask = cross_mask.unsqueeze(1).unsqueeze(2)
+    cross_mask = (1.0 - cross_mask) * -1e9
+    
+    print(f"\n🎭 マスク情報:")
+    print(f"  causal_mask.shape: {causal_mask.shape}")
+    print(f"  cross_mask.shape: {cross_mask.shape}")
+    print(f"  cross_mask[0,0,0]: {cross_mask[0,0,0].tolist()}")
+    
+    # Forward pass
+    print(f"\n🚀 DecoderBlock実行...")
+    with torch.no_grad():
+        output = decoder_block(
+            x=english_hidden,
+            encoder_output=italian_encoder,
+            self_mask=causal_mask,
+            cross_mask=cross_mask
+        )
+    
+    print(f"\n📤 出力結果:")
+    print(f"  output.shape: {output.shape}")
+    print(f"  output.mean: {output.mean():.4f}")
+    print(f"  output.std: {output.std():.4f}")
+    print(f"  output.min: {output.min():.4f}")
+    print(f"  output.max: {output.max():.4f}")
+    
+    # 形状チェック
+    expected_shape = (batch_size, eng_len, d_model)
+    assert output.shape == expected_shape, f"形状エラー: {output.shape} != {expected_shape}"
+    
+    # NaN/Inf チェック
+    assert not torch.isnan(output).any(), "NaNが検出されました"
+    assert not torch.isinf(output).any(), "Infが検出されました"
+    
+    print(f"\n✅ 基本チェック通過!")
+    
+    # 段階別動作確認
+    test_decoder_step_by_step(decoder_block, english_hidden, italian_encoder, causal_mask, cross_mask)
+    
+    print(f"\n🎉 DecoderBlock テスト完了!")
+    return output
+
+def test_decoder_step_by_step(decoder_block, english_hidden, italian_encoder, causal_mask, cross_mask):
+    """
+    DecoderBlockの各ステップを詳細確認
+    """
+    print(f"\n🔍 段階別動作確認:")
+    
+    with torch.no_grad():
+        x = english_hidden.clone()
+        
+        # Step 1: Self-Attention
+        residual = x
+        x_norm = decoder_block.layer_norm1(x)
+        x_self_attn = decoder_block.self_attention(x_norm, mask=causal_mask)
+        x = decoder_block.dropout(x_self_attn) + residual
+        
+        print(f"  Step 1 (Self-Attention):")
+        print(f"    input_mean: {english_hidden.mean():.4f}")
+        print(f"    output_mean: {x.mean():.4f}")
+        print(f"    change: {torch.abs(x - english_hidden).mean():.4f}")
+        
+        # Step 2: Cross-Attention
+        residual = x
+        x_norm = decoder_block.layer_norm2(x)
+        x_cross_attn = decoder_block.cross_attention(
+            query_input=x_norm,
+            key_value_input=italian_encoder,
+            mask=cross_mask
+        )
+        x = decoder_block.dropout(x_cross_attn) + residual
+        
+        print(f"  Step 2 (Cross-Attention):")
+        print(f"    output_mean: {x.mean():.4f}")
+        print(f"    italian_influence: {torch.abs(x_cross_attn).mean():.4f}")
+        
+        # Step 3: Feed Forward
+        residual = x
+        x_norm = decoder_block.layer_norm3(x)
+        x_ffn = decoder_block.ffn(x_norm)
+        x = decoder_block.dropout(x_ffn) + residual
+        
+        print(f"  Step 3 (Feed Forward):")
+        print(f"    output_mean: {x.mean():.4f}")
+        print(f"    ffn_change: {torch.abs(x_ffn).mean():.4f}")
+        
+        # 最終結果との比較
+        full_output = decoder_block(english_hidden, italian_encoder, causal_mask, cross_mask)
+        diff = torch.abs(x - full_output).max()
+        print(f"  ✅ 段階別 vs 一括実行の差分: {diff:.8f}")
+
+def test_decoder_masking_effects():
+    """
+    DecoderBlockでのマスクの効果を確認
+    """
+    print(f"\n🎭 マスク効果テスト:")
+    
+    batch_size, eng_len, ita_len, d_model = 1, 4, 6, 64
+    decoder_block = DecoderBlock(d_model, 4, 256, dropout=0.0)
+    
+    english_hidden = torch.randn(batch_size, eng_len, d_model)
+    italian_encoder = torch.randn(batch_size, ita_len, d_model)
+    
+    # テスト1: マスクなし
+    output_no_mask = decoder_block(english_hidden, italian_encoder)
+    
+    # テスト2: Causal Maskのみ
+    causal_mask = torch.triu(torch.ones(eng_len, eng_len), diagonal=1)
+    causal_mask = causal_mask.masked_fill(causal_mask == 1, -1e9)
+    causal_mask = causal_mask.unsqueeze(0).unsqueeze(0)
+    
+    output_causal = decoder_block(english_hidden, italian_encoder, self_mask=causal_mask)
+    
+    # テスト3: Cross Maskのみ
+    cross_mask = torch.zeros(batch_size, 1, 1, ita_len)
+    cross_mask[0, 0, 0, -2:] = -1e9  # 最後2語をマスク
+    
+    output_cross = decoder_block(english_hidden, italian_encoder, cross_mask=cross_mask)
+    
+    # テスト4: 両方のマスク
+    output_both = decoder_block(english_hidden, italian_encoder, causal_mask, cross_mask)
+    
+    print(f"  マスクなし vs Causal: {torch.abs(output_no_mask - output_causal).mean():.6f}")
+    print(f"  マスクなし vs Cross: {torch.abs(output_no_mask - output_cross).mean():.6f}")
+    print(f"  マスクなし vs 両方: {torch.abs(output_no_mask - output_both).mean():.6f}")
+
+def test_decoder_edge_cases():
+    """
+    DecoderBlockのエッジケーステスト
+    """
+    print(f"\n🚨 DecoderBlock エッジケーステスト:")
+    
+    d_model = 64
+    decoder_block = DecoderBlock(d_model, 4, 256, dropout=0.0)
+    
+    # テスト1: 最小サイズ
+    print("1️⃣ 最小サイズテスト")
+    english = torch.randn(1, 1, d_model)
+    italian = torch.randn(1, 1, d_model)
+    output = decoder_block(english, italian)
+    assert output.shape == (1, 1, d_model), "最小サイズテスト失敗"
+    print("   ✅ 通過")
+    
+    # テスト2: 勾配フロー
+    print("2️⃣ 勾配フローテスト")
+    english = torch.randn(1, 3, d_model, requires_grad=True)
+    italian = torch.randn(1, 4, d_model, requires_grad=True)
+    output = decoder_block(english, italian)
+    loss = output.sum()
+    loss.backward()
+    assert english.grad is not None and italian.grad is not None, "勾配計算失敗"
+    print("   ✅ 通過")
+    
+    print("✅ 全エッジケーステスト通過!")
+
+def main():
+    """
+    DecoderBlock総合テスト
+    """
+    print("🚀 DecoderBlock 総合テスト開始")
+    print("=" * 60)
+    
+    try:
+        # 基本テスト
+        output = test_decoder_block()
+        
+        # マスク効果テスト
+        test_decoder_masking_effects()
+        
+        # エッジケーステスト
+        test_decoder_edge_cases()
+        
+        print(f"\n🏆 全テスト完了! DecoderBlockは正常に動作しています。")
+        
+    except Exception as e:
+        print(f"\n❌ テスト失敗: {e}")
+        import traceback
+        traceback.print_exc()
+
+if __name__ == "__main__":
+    main()
+
+"""
 def main():
     #test_bert_embeddings()
     #test_edge_cases()
-    test_bert_masking()
-    return 0
+    #test_bert_masking()
+    print("🚀 CrossAttention 総合テスト開始")
+    print("=" * 60)
+    
+    try:
+        # 基本テスト
+        output = test_cross_attention()
+        
+        # エッジケーステスト
+        test_cross_attention_edge_cases()
+        
+        print(f"\n🏆 全テスト完了! CrossAttentionは正常に動作しています。")
+        
+    except Exception as e:
+        print(f"\n❌ テスト失敗: {e}")
+        import traceback
+        traceback.print_exc()
 
-main()
+if __name__ == "__main__":
+    main()
+
+"""
 
 
 

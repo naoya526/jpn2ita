@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
-from torch.utils.data import DataLoader
 
 # I tried to implement a BERT model from scratch using PyTorch.
 
@@ -178,7 +177,7 @@ class PositionwiseFeedForward(nn.Module):
         return x  
       
 
-class TransformerBlock(nn.Module):
+class EncoderBlock(nn.Module):
     """
     ヒント:
     - Multi-Head Attention + Residual Connection + Layer Norm
@@ -278,7 +277,7 @@ class Bert(nn.Module):
         self.embedding = BertEmbeddings(vocab_size, d_model, max_seq_len, dropout)
 
         self.encoder_blocks = torch.nn.ModuleList(
-            [TransformerBlock(d_model, num_heads, d_model * 4, dropout) for _ in range(num_layers)])
+            [EncoderBlock(d_model, num_heads, d_model * 4, dropout) for _ in range(num_layers)])
         
     def forward(self, input_ids, attention_mask=None, token_type_ids=None):
         # TODO: BERT全体のforward passを実装
@@ -296,3 +295,5 @@ class Bert(nn.Module):
         for encoder in self.encoder_blocks:
             x = encoder.forward(x, extended_attention_mask)
         return x
+
+
