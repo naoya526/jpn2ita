@@ -1,0 +1,13 @@
+
+!README.md
+!English_to_Italian_automatic_translation.ipynb
+!06_Attention_and_Transformers_in_BERT.ipynb
+!Model.py
+
+tools
+data
+temp-itaeng-tatoeba
+ipynb_archive
+*.txt
+*.json
+
