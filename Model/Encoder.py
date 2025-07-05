@@ -187,10 +187,12 @@ class EncoderBlock(nn.Module):
     def __init__(self, d_model, num_heads, d_ff, dropout=0.1):
         super().__init__()
         self.attention = MultiHeadAttention(d_model,num_heads)
+        self.ffn = PositionwiseFeedForward(d_model,d_ff)
+        
         self.layer_norm1 = nn.LayerNorm(normalized_shape=d_model, eps=1e-6)
         self.layer_norm2 = nn.LayerNorm(normalized_shape=d_model, eps=1e-6)
         self.dropout = nn.Dropout(dropout)
-        self.ffn = PositionwiseFeedForward(d_model,d_ff)
+        
     def forward(self, x, mask=None):
         #Attention block
         #TODO implement transformer block
