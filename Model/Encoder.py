@@ -302,5 +302,3 @@ class Bert(nn.Module):
         for encoder in self.encoder_blocks:
             x = encoder.forward(x, extended_attention_mask)
         return x
-
-
