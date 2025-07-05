@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
-from Encoder import MultiHeadAttention, PositionwiseFeedForward
+from Encoder import MultiHeadAttention, PositionwiseFeedForward, Bert, BertEmbeddings
 
 class CrossAttention(nn.Module):
     """
@@ -95,7 +95,7 @@ class DecoderBlock(nn.Module):
 
         #Cross Attention
         residual = x
-        x = self.layer_norm1(x)
+        x = self.layer_norm2(x)
         x = self.cross_attention(
             query_input=x,
             key_value_input=encoder_output,
@@ -104,7 +104,72 @@ class DecoderBlock(nn.Module):
         x = self.dropout(x) + residual
 
         residual = x
-        x = self.layer_norm2(x)
+        x = self.layer_norm3(x)
         x = self.ffn(x)
         x = self.dropout(x) + residual
         return x
+    
+class BertTranslationModel(nn.Module):
+    """
+    Ita2Eng Translation Model
+    Encoder: Bert
+    Decoder: BertEmbedding, DecoderBlock*N, FFN
+    """
+    def __init__(self, 
+                 ita_vocab_size,  # イタリア語語彙サイズ
+                 eng_vocab_size,  # 英語語彙サイズ  
+                 max_seq_len,
+                 d_model=512,
+                 num_layers=6,
+                 num_heads=8,
+                 dropout=0.1):
+        super().__init__()
+
+        self.encoder = Bert(
+            vocab_size=eng_vocab_size,
+            d_model=d_model,
+            num_layers=num_layers,
+            num_heads=num_heads,
+            max_seq_len=max_seq_len,
+            dropout=dropout
+        )
+
+        self.decoder_embeddings = BertEmbeddings(
+            vocab_size=ita_vocab_size,
+            d_model=d_model,
+            max_seq_len=max_seq_len,
+            dropout=dropout
+        )
+
+        self.decoder_blocks = nn.ModuleList([
+            DecoderBlock(
+                d_model=d_model, 
+                num_heads=num_heads, 
+                d_ff=d_model * 4, #based on the paper of Bert
+                dropout=dropout)
+            for _ in range(num_layers)
+        ])
+
+        self.output_proj = nn.Linear(d_model, ita_vocab_size)
+
+    def forward(self,  
+                eng_ids, 
+                ita_ids,
+                eng_mask=None, 
+                ita_mask=None, 
+                eng_token_type_ids=None,
+                ita_token_type_ids=None):
+        # understand english
+        encoder_output = self.encoder(input_ids=eng_ids, attention_mask=eng_mask, token_type_ids=eng_token_type_ids)
+        # produce Italian
+        decoder_input = self.decoder_embeddings(input_ids=ita_ids, token_type_ids=ita_token_type_ids)
+
+        for decoder_block in self.decoder_blocks:
+            decoder_input = decoder_block(
+                x=decoder_input,
+                encoder_output=encoder_output,
+                self_mask=ita_mask,               # 英語のCausal mask
+                cross_mask=eng_mask
+                )
+        logits = self.output_proj(decoder_input)
+        return logits

@@ -138,7 +138,7 @@ class MultiHeadAttention(nn.Module):
         # ステップ5: マスク処理（オプション）
         if mask is not None:
             # mask形状: (batch, 1, 1, seq_len) → scores形状: (batch, num_heads, seq_len, seq_len)
-            scores = scores + mask  # ブロードキャストで加算
+            scores = scores.masked_fill(mask == 0, -1e9)
         
         # ステップ6: Softmax + Dropout
         weights = F.softmax(scores, dim=-1)  # (batch, num_heads, seq_len, seq_len)
@@ -285,9 +285,14 @@ class Bert(nn.Module):
         # TODO: BERT全体のforward passを実装
         if attention_mask is None:
             attention_mask = (input_ids != 0).float()
-        # (batch, seq_len) → (batch, 1, 1, seq_len)
-        batch_size, seq_len = input_ids.shape
-        extended_attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
+        if attention_mask.dim() == 2:
+            # (batch, seq_len) → (batch, 1, 1, seq_len)
+            extended_attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
+            print("squeeze is required")
+        elif attention_mask.dim() == 4:
+            # 既に正しい形状の場合はそのまま使用
+            extended_attention_mask = attention_mask
+            print("squeeze is not required")
         # 0を-1e9に変換（Softmaxで0になるように）
         extended_attention_mask = (1.0 - extended_attention_mask) * -1e9
 
