@@ -138,7 +138,8 @@ class MultiHeadAttention(nn.Module):
         
         # ステップ5: マスク処理（オプション）
         if mask is not None:
-            scores = scores.masked_fill(mask == 0, -1e9)
+            # mask形状: (batch, 1, 1, seq_len) → scores形状: (batch, num_heads, seq_len, seq_len)
+            scores = scores + mask  # ブロードキャストで加算
         
         # ステップ6: Softmax + Dropout
         weights = F.softmax(scores, dim=-1)  # (batch, num_heads, seq_len, seq_len)
@@ -268,12 +269,33 @@ class Bert(nn.Module):
     
     def __init__(self, vocab_size, d_model=768, num_layers=12, num_heads=12, d_ff=3072, max_seq_len=512, dropout=0.1):
         super().__init__()
-        # TODO: BERTの全体構造を実装
-        pass
-    
+        self.d_model = d_model
+        self.num_layers = num_layers
+        self.heads = num_heads
+        # paper noted 4*d_model size for ff
+        self.feed_forward_hidden = d_model * 4
+        # embedding for BERT, sum of positional, segment, token embeddings
+        self.embedding = BertEmbeddings(vocab_size, d_model, max_seq_len, dropout)
+
+        self.encoder_blocks = torch.nn.ModuleList(
+            [TransformerBlock(d_model, num_heads, d_model * 4, dropout) for _ in range(num_layers)])
+        
     def forward(self, input_ids, attention_mask=None, token_type_ids=None):
         # TODO: BERT全体のforward passを実装
-        pass
+        if attention_mask is None:
+            attention_mask = (input_ids != 0).float()
+        # (batch, seq_len) → (batch, 1, 1, seq_len)
+        batch_size, seq_len = input_ids.shape
+        extended_attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
+        # 0を-1e9に変換（Softmaxで0になるように）
+        extended_attention_mask = (1.0 - extended_attention_mask) * -1e9
+
+        # embedding the indexed sequence to sequence of vectors
+        x = self.embedding(input_ids, token_type_ids)
+        # running over multiple transformer blocks
+        for encoder in self.encoder_blocks:
+            x = encoder.forward(x, extended_attention_mask)
+        return x
 
 # main
 
@@ -410,10 +432,52 @@ def test_edge_cases():
     assert diff < 1e-6, "token_type_ids=Noneの処理が正しくありません"
     
     print("✅ 全てのエッジケーステスト通過！")
+def test_bert_masking():
+    """
+    BERTのマスキング動作をテスト
+    """
+    print("🧪 BERT Masking テスト")
+    print("=" * 40)
+    
+    # 小さなBERTモデル
+    bert = Bert(vocab_size=1000, d_model=128, num_layers=2, num_heads=4)
+    
+    # テストデータ: 異なる長さの文
+    input_ids = torch.tensor([
+        [101, 123, 578, 102,    0,    0],  # 短い文
+        [101, 111, 222, 333, 444, 102]   # 長い文
+    ])
+    
+    # 手動でattention_maskを作成
+    attention_mask = torch.tensor([
+        [1, 1, 1, 1, 0, 0],  # 最初の4語のみ
+        [1, 1, 1, 1, 1, 1]   # 全語有効
+    ])
+    
+    print(f"📥 入力:")
+    print(f"  input_ids: {input_ids.shape}")
+    print(f"  attention_mask: {attention_mask.shape}")
+    
+    # Forward pass
+    with torch.no_grad():
+        output = bert(input_ids, attention_mask)
+    
+    print(f"📤 出力:")
+    print(f"  output: {output.shape}")
+    
+    # パディング位置の出力確認
+    padding_output = output[0, 4:, :]  # 最初のサンプルのパディング部分
+    valid_output = output[0, :4, :]    # 有効部分
+    
+    print(f"📊 パディング位置の統計:")
+    print(f"  パディング部分の平均: {padding_output.mean():.6f}")
+    print(f"  有効部分の平均: {valid_output.mean():.6f}")
+    print(f"  (パディング部分もAttentionの影響を受ける)")
 
 def main():
-    test_bert_embeddings()
-    test_edge_cases()
+    #test_bert_embeddings()
+    #test_edge_cases()
+    test_bert_masking()
     return 0
 
 main()
