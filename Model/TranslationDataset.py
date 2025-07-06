@@ -1,5 +1,7 @@
 import torch
 from torch.utils.data import Dataset
+from collections import defaultdict
+
 def download_scentence():
     eng_sentences = []
     with open("text-eng.txt", "r") as f:
@@ -16,6 +18,45 @@ def download_scentence():
                 ita_sentences.append(line)
     return eng_sentences, ita_sentences
 
+
+def build_vocabulary(sentences, min_freq=2):
+    """
+    Build vocabulary dictionary from sentences
+    
+    Args:
+        sentences: List of sentences (strings)
+        min_freq: Minimum frequency for a word to be included in vocabulary
+        
+    Returns:
+        vocab: Dictionary mapping words to IDs {word: id}
+    """
+    word_freq = defaultdict(int)
+    
+    # Count word frequencies
+    for sentence in sentences:
+        words = sentence.lower().split()
+        for word in words:
+            # Remove punctuation
+            word = word.strip('.,!?;:"()[]{}')
+            if word:  # Skip empty strings
+                word_freq[word] += 1
+    
+    # Create vocabulary with special tokens
+    vocab = {
+        '[PAD]': 0,
+        '[CLS]': 1, 
+        '[SEP]': 2,
+        '[UNK]': 3
+    }
+    
+    # Add words that appear at least min_freq times
+    token_id = 4
+    for word, freq in word_freq.items():
+        if freq >= min_freq:
+            vocab[word] = token_id
+            token_id += 1
+    
+    return vocab
 
 class TranslationDataset(Dataset):
     def __init__(self, data_pair, eng_vocab, ita_vocab, seq_len=64):
