@@ -1,3 +1,22 @@
+import torch
+from torch.utils.data import Dataset
+def download_scentence():
+    eng_sentences = []
+    with open("text-eng.txt", "r") as f:
+        for line in f:
+            line = line.strip().replace('<sos>', '').replace('<eos>', '').strip()
+            if line:
+                eng_sentences.append(line)
+
+    ita_sentences = []
+    with open("text-ita.txt", "r") as f:
+        for line in f:
+            line = line.strip().replace('<sos>', '').replace('<eos>', '').strip()
+            if line:
+                ita_sentences.append(line)
+    return eng_sentences, ita_sentences
+
+
 class TranslationDataset(Dataset):
     def __init__(self, data_pair, eng_vocab, ita_vocab, seq_len=64):
         self.data_pair = data_pair
